@@ -1,10 +1,24 @@
 {
   description = "Provision Fly.io Sprites with Nix and standalone home-manager";
 
+  # The agent CLIs below are only cached by numtide; without this the guest
+  # would build hermes-agent and claude-code from source inside the microVM.
+  nixConfig = {
+    extra-substituters = ["https://cache.numtide.com"];
+    extra-trusted-public-keys = [
+      "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
+
+    # hermes-agent, claude-code and friends. Deliberately NOT following our
+    # nixpkgs: the prebuilt closures in cache.numtide.com are keyed to this
+    # flake's own pin, and overriding it means rebuilding everything locally.
+    llm-agents.url = "github:numtide/llm-agents.nix";
   };
 
   outputs = {
@@ -43,11 +57,18 @@
       import nixpkgs {
         inherit system;
         config.allowUnfreePredicate = pkg: lib.getName pkg == "sprite";
+        # Upstream llm-agents.nix dropped its overlay output, so build the
+        # `pkgs.llm-agents` namespace from its per-system `packages`.
+        overlays = [
+          (_final: prev: {
+            llm-agents = inputs.llm-agents.packages.${prev.stdenv.hostPlatform.system};
+          })
+        ];
       };
 
     mkSpriteHome = system:
       home-manager.lib.homeManagerConfiguration {
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = pkgsFor system;
         extraSpecialArgs = {inherit inputs;};
         modules = [./home/sprite.nix];
       };

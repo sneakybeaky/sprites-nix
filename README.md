@@ -61,3 +61,11 @@ idempotent and only rebuilds what changed.
 - **`.bashrc` sources `hm-session-vars.sh` explicitly**, because
   `sprite console` starts an interactive non-login shell that never reads
   `~/.profile`.
+- **Agent CLIs come from [`numtide/llm-agents.nix`](https://github.com/numtide/llm-agents.nix)**
+  (`hermes-agent`, `claude-code`), exposed as `pkgs.llm-agents` by an overlay —
+  upstream dropped its own overlay output, so the namespace is built from its
+  per-system `packages`. That input deliberately does **not** follow our
+  nixpkgs: its prebuilt closures are keyed to its own pin. They are cached
+  only by `cache.numtide.com`, so `bootstrap-guest.sh` writes that substituter
+  into the guest's `nix.conf` — without it the microVM compiles both from
+  source.

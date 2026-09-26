@@ -49,10 +49,17 @@ command -v nix >/dev/null 2>&1 || die "nix is still not on PATH after install"
 # manage nix.package would conflict on bin/nix at activation time.
 log "writing ~/.config/nix/nix.conf"
 mkdir -p "$HOME/.config/nix"
+#
+# The numtide substituter is required, not an optimisation: hermes-agent and
+# claude-code are only cached there, and building them from source inside a
+# microVM is slow. A single-user install makes us the store owner, so
+# substituters in the user's nix.conf are trusted.
 cat >"$HOME/.config/nix/nix.conf" <<'EOF'
 experimental-features = nix-command flakes
 warn-dirty = false
 accept-flake-config = false
+extra-substituters = https://cache.numtide.com
+extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
 EOF
 
 log "building homeConfigurations.$HM_CONFIG.activationPackage"

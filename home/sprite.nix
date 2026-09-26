@@ -35,12 +35,19 @@
     fd
     gh
     gnumake
+    go
     htop
     jq
     ripgrep
     tree
     unzip
     wget
+
+    # Agent CLIs from numtide/llm-agents.nix, exposed as pkgs.llm-agents by
+    # the overlay in flake.nix. Same source as the host config, so the two
+    # stay on matching versions.
+    llm-agents.hermes-agent
+    llm-agents.claude-code
   ];
 
   programs.home-manager.enable = true;
