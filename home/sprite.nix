@@ -53,6 +53,17 @@
     # stay on matching versions.
     llm-agents.hermes-agent
     llm-agents.claude-code
+
+    # The rest of the workbench, mirroring the host's ai.nix/ai-personal.nix.
+    # Note the base image already provides node, python+uv, rust, go, gh, git,
+    # sqlite and jq; the Nix copies above/below shadow them on purpose so the
+    # versions are pinned rather than whatever Fly baked in.
+    llm-agents.crush
+    llm-agents.ccusage
+    llm-agents.agent-browser
+    llm-agents.skills
+    llm-agents.herdr
+    llm-agents.nono
   ];
 
   programs.home-manager.enable = true;
