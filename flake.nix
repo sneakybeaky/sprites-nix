@@ -114,7 +114,7 @@
           home-manager.packages.${system}.home-manager
         ];
         shellHook = ''
-          echo "sprite $(sprite --version 2>/dev/null || echo '(run: sprite login)')"
+          sprite --version 2>/dev/null || echo "sprite: run 'sprite login' first"
           echo "provision a sprite:  ./scripts/provision.sh <sprite-name>"
         '';
       };

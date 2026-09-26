@@ -20,6 +20,7 @@ an activation switch.
 ## Usage
 
 ```sh
+direnv allow           # or: nix develop
 nix develop            # sprite CLI + home-manager + shellcheck on PATH
 sprite login           # once
 ./scripts/provision.sh my-sprite
