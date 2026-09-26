@@ -138,6 +138,13 @@
   # starship/direnv/fzf/zoxide integrations that were bash-only.
   programs.fish = {
     enable = true;
+
+    # Off for two reasons. It builds one <pkg>-fish-completions derivation for
+    # every entry in home.packages (37 extra local builds here), and each one
+    # runs fish, which creates its config dirs in $HOME — i.e. in
+    # /homeless-shelter, which then makes every later build fail nix's
+    # no-sandbox purity check.
+    generateCompletions = false;
     shellInit = ''
       # Belt and braces for a shell started without sourcing hm-session-vars.
       if test -z "$USER"

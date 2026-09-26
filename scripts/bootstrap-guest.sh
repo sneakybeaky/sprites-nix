@@ -72,6 +72,9 @@ cat >"$HOME/.config/nix/nix.conf" <<'EOF'
 experimental-features = nix-command flakes
 warn-dirty = false
 accept-flake-config = false
+# Explicit because it cannot be otherwise here: sandboxing requires a daemon
+# running as root, and this is a single-user install.
+sandbox = false
 extra-substituters = https://cache.numtide.com
 extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
 EOF
@@ -81,14 +84,26 @@ EOF
 # "do you want to allow configuration setting ... (y/N)?" — `accept-flake-config
 # = false` in nix.conf does NOT suppress that prompt in nix 2.35. The flake's
 # copy is redundant anyway: the substituter is already in the nix.conf above.
-log "building homeConfigurations.$HM_CONFIG.activationPackage"
-activation=$(
+# Single-user Nix cannot sandbox — that needs a daemon running as root — so
+# every build runs with HOME=/homeless-shelter and nix aborts if that path
+# already exists ("please remove it to assure purity of builds without
+# sandboxing"). Builds that run a shell can create it mid-run, so clear it
+# first and retry once if a build tripped over it. Removal needs no sudo: the
+# directory belongs to the build user, which is us.
+build_activation() {
+  rm -rf /homeless-shelter 2>/dev/null || true
   nix build \
     --extra-experimental-features 'nix-command flakes' \
     --no-accept-flake-config \
     --no-link --print-out-paths \
     "$FLAKE_DIR#homeConfigurations.$HM_CONFIG.activationPackage"
-)
+}
+
+log "building homeConfigurations.$HM_CONFIG.activationPackage"
+if ! activation=$(build_activation); then
+  log "build failed; clearing /homeless-shelter and retrying once"
+  activation=$(build_activation)
+fi
 [ -n "$activation" ] || die "build produced no output path"
 
 log "activating $activation"
