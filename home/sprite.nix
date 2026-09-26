@@ -79,10 +79,21 @@
       la = "eza -la --git";
       cat = "bat --paging=never";
     };
-    # `sprite console` starts an interactive, non-login shell, which never
-    # reads ~/.profile. Source the session vars from .bashrc too, otherwise
-    # PATH, EDITOR and XDG_DATA_DIRS are silently missing in every console.
+    # Two guest quirks, fixed in order:
+    #
+    # 1. `sprite exec`/`console` provide no USER or LOGNAME, and Nix's
+    #    profile script no-ops unless USER is set, so nix would be missing
+    #    from PATH.
+    # 2. `sprite console` is an interactive, non-login shell, so it never
+    #    reads ~/.profile and would miss the session vars entirely.
     initExtra = ''
+      : "''${USER:=$(id -un)}"
+      : "''${LOGNAME:=$USER}"
+      export USER LOGNAME
+
+      if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+        . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+      fi
       if [ -f "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh" ]; then
         . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
       fi
