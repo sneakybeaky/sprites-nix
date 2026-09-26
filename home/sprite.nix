@@ -95,7 +95,6 @@
       init.defaultBranch = "main";
       pull.rebase = true;
       push.autoSetupRemote = true;
-      safe.directory = "*"; # the overlay filesystem confuses git's ownership check
     };
     # Set your identity here, or leave it to `gh auth setup-git` / per-repo config.
     # userName = "you";

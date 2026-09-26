@@ -2,3 +2,10 @@ result
 result-*
 .direnv/
 .sprite
+
+# Secrets never belong in this repo: pass them with `sprite exec --env`, or
+# fetch them in the guest from a secret manager.
+.env
+.env.*
+*.pem
+*.key

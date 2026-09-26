@@ -52,6 +52,15 @@ idempotent and only rebuilds what changed.
 - **Single-user Nix in the guest** (`--no-daemon`): there is no systemd to run
   `nix-daemon` under, and a hibernating Sprite loses any resident process
   while keeping its disk.
+- **Builds in the guest are not sandboxed**, and cannot be: Nix's sandbox needs
+  a daemon running as root. Every `nix build` therefore runs its build scripts
+  as `sprite` with full access to the home directory, which matters if agents in
+  the Sprite evaluate flakes you have not read. `accept-flake-config = false`
+  plus `--no-accept-flake-config` at least stops a fetched flake from injecting
+  substituters or trusted keys. Unprivileged user namespaces *are* available in
+  the guest, so a multi-user install (`nix-installer --init none`, daemon
+  registered as a `sprite-env` service) is the route to real sandboxing if you
+  need it.
 - **Nix config is not managed by home-manager.** `home.packages` installs into
   the same `~/.nix-profile` that the installer uses for `nix` itself, so
   setting `nix.package` there makes activation fail on `bin/nix`.
