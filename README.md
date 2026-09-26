@@ -79,3 +79,11 @@ idempotent and only rebuilds what changed.
   only by `cache.numtide.com`, so `bootstrap-guest.sh` writes that substituter
   into the guest's `nix.conf` — without it the microVM compiles both from
   source.
+
+## License
+
+[MIT](./LICENSE) — covers the files in this repository.
+
+It does not relicense the software this repository *installs*. Notably `sprite`
+is unfree (Fly.io) and nixpkgs marks `claude-code` unfree too, so using them
+still requires your own agreement with those vendors.
