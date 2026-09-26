@@ -128,7 +128,10 @@ tar -czf "$tmp/flake.tar.gz" -C "$flake_dir" \
   flake.nix flake.lock home scripts
 
 log "pushing flake to $REMOTE_DIR"
-sprite file push "${sprite_flags[@]}" "$tmp/flake.tar.gz" /tmp/sprites-provision.tar.gz
+# -p is not optional: `sprite file push` (rc48) pre-flight-checks the remote
+# parent directory and wrongly reports "directory /tmp does not exist" for
+# paths outside $HOME. -p skips that check; the write itself is fine.
+sprite file push "${sprite_flags[@]}" -p "$tmp/flake.tar.gz" /tmp/sprites-provision.tar.gz
 sprite exec "${sprite_flags[@]}" -- sh -c "
   set -e
   mkdir -p '$REMOTE_DIR'
