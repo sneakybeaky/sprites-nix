@@ -8,7 +8,11 @@
 #      processes belong in `sprite-env services create`, not systemd units.
 #   2. There is no systemd session bus to talk to, so no systemd.user services.
 #
-{pkgs, ...}: {
+{
+  config,
+  pkgs,
+  ...
+}: {
   home.username = "sprite";
   home.homeDirectory = "/home/sprite";
   home.stateVersion = "26.11";
@@ -21,6 +25,18 @@
   # defaults to on with genericLinux and drags in mesa (272 MiB unpacked) plus
   # two non-nixos-gpu derivations for nothing.
   targets.genericLinux.gpu.enable = false;
+
+  # The guest has no USER or LOGNAME (sprite exec hands over a minimal
+  # environment), and nix's own profile script starts with
+  #   if [ -n "$HOME" ] && [ -n "$USER" ]
+  # so without them nothing nix-related reaches PATH. Setting them here is what
+  # fixes every shell at once: home-manager emits sessionVariables *before*
+  # sessionVariablesExtra, and targets.genericLinux appends the `. nix.sh` line
+  # to the latter. The fish module babelfish-translates the same file.
+  home.sessionVariables = {
+    USER = config.home.username;
+    LOGNAME = config.home.username;
+  };
 
   # Nix itself is installed and configured by scripts/bootstrap-guest.sh.
   #
@@ -113,6 +129,32 @@
       if [ -f "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh" ]; then
         . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh"
       fi
+    '';
+  };
+
+  # `sprite console` inherits your *local* $SHELL, so on a fish host you land
+  # in the guest's fish (4.2.1, from the base image) — which read no nix
+  # config at all before this. Enabling the module also gives fish the
+  # starship/direnv/fzf/zoxide integrations that were bash-only.
+  programs.fish = {
+    enable = true;
+    shellInit = ''
+      # Belt and braces for a shell started without sourcing hm-session-vars.
+      if test -z "$USER"
+        set -gx USER (id -un)
+      end
+      if test -z "$LOGNAME"
+        set -gx LOGNAME $USER
+      end
+
+      # Fish cannot source the POSIX nix.sh; use the fish variant the
+      # installer ships, then make sure the profile is on PATH regardless.
+      if test -e $HOME/.nix-profile/etc/profile.d/nix.fish
+        source $HOME/.nix-profile/etc/profile.d/nix.fish
+      end
+      if not contains $HOME/.nix-profile/bin $PATH
+        set -gx PATH $HOME/.nix-profile/bin $PATH
+      end
     '';
   };
 

@@ -152,13 +152,41 @@ sprite exec "${sprite_flags[@]}" \
   --env "FLAKE_DIR=$REMOTE_DIR,HM_CONFIG=$config" \
   -- "$REMOTE_DIR/scripts/bootstrap-guest.sh"
 
-log "verifying"
+# Verify in a *login* bash and in fish, because they load the environment by
+# different routes, and fail the run if either is missing the nix profile — an
+# earlier version printed MISSING and still exited 0, reporting a broken
+# provision as success.
+log "verifying login shell (bash -l)"
 # shellcheck disable=SC2016  # expanded inside the guest, not here
 sprite exec "${sprite_flags[@]}" -- bash -lc '
-  printf "nix       %s\n" "$(nix --version 2>/dev/null || echo MISSING)"
-  printf "git       %s\n" "$(git --version 2>/dev/null || echo MISSING)"
-  printf "home-manager %s\n" "$(home-manager --version 2>/dev/null || echo MISSING)"
-'
+  fail=0
+  for t in nix home-manager git go hermes claude crush; do
+    p=$(command -v "$t" 2>/dev/null) || p=""
+    case "$p" in
+      "$HOME"/.nix-profile/bin/*) printf "  %-13s %s\n" "$t" "$p" ;;
+      "") printf "  %-13s MISSING\n" "$t"; fail=1 ;;
+      *) printf "  %-13s %s  (not the nix-managed one)\n" "$t" "$p"; fail=1 ;;
+    esac
+  done
+  exit "$fail"
+' || die "the login shell is missing nix-managed tools (see above)"
+
+if sprite exec "${sprite_flags[@]}" -- sh -c 'command -v fish >/dev/null 2>&1'; then
+  log "verifying fish"
+  # shellcheck disable=SC2016  # expanded inside the guest, not here
+  sprite exec "${sprite_flags[@]}" -- fish -lc '
+    set fail 0
+    for t in nix home-manager hermes claude
+      if command -q $t
+        printf "  %-13s %s\n" $t (command -v $t)
+      else
+        printf "  %-13s MISSING\n" $t
+        set fail 1
+      end
+    end
+    exit $fail
+  ' || die "fish does not have the nix environment loaded"
+fi
 
 cat >&2 <<EOF
 
