@@ -141,7 +141,14 @@ sprite exec "${sprite_flags[@]}" -- sh -c "
 "
 
 log "bootstrapping Nix and activating home-manager (first run downloads a lot)"
-sprite exec "${sprite_flags[@]}" --tty \
+# Deliberately no --tty. Two reasons:
+#   1. With stderr on a guest PTY, nix stops to ask about this flake's
+#      nixConfig even when passed --no-accept-flake-config, so the run hangs.
+#      Without a TTY it warns, ignores the setting and continues.
+#   2. TTY sessions are detachable, so a cancelled run leaves the bootstrap
+#      alive inside the sprite and the next run fights it. Check for leftovers
+#      with `sprite sessions list -s <name>`.
+sprite exec "${sprite_flags[@]}" \
   --env "FLAKE_DIR=$REMOTE_DIR,HM_CONFIG=$config" \
   -- "$REMOTE_DIR/scripts/bootstrap-guest.sh"
 
