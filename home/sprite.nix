@@ -17,6 +17,11 @@
   # against the Ubuntu filesystem layout.
   targets.genericLinux.enable = true;
 
+  # ...but a Sprite is a headless microVM with no display. The GPU integration
+  # defaults to on with genericLinux and drags in mesa (272 MiB unpacked) plus
+  # two non-nixos-gpu derivations for nothing.
+  targets.genericLinux.gpu.enable = false;
+
   # Nix itself is installed and configured by scripts/bootstrap-guest.sh.
   #
   # Do not let Home Manager manage it: home.packages is installed into the same
