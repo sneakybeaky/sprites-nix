@@ -64,6 +64,16 @@
     unzip
     wget
 
+    # Tailscale. The guest has /dev/net/tun (char 10,200) and NOPASSWD sudo,
+    # so this runs in normal kernel mode — no userspace-networking fallback.
+    # The Ubuntu image has no iptables at all; nixpkgs wraps tailscaled with
+    # iptables/iproute2 on its own PATH, which is why this must be the Nix
+    # build and not a distro package.
+    #
+    # The daemon itself is started by the Sprite runtime, not from here: see
+    # the services section of scripts/bootstrap-guest.sh.
+    tailscale
+
     # Agent CLIs from numtide/llm-agents.nix, exposed as pkgs.llm-agents by
     # the overlay in flake.nix. Same source as the host config, so the two
     # stay on matching versions.
@@ -83,6 +93,34 @@
   ];
 
   programs.home-manager.enable = true;
+
+  # `hermes serve` daemonizes: it forks the real server and the launcher exits
+  # immediately. A Sprite service pointed straight at it leaves the runtime
+  # tracking a dead pid — it reports "running" while supervising nothing, so a
+  # crashed server is never restarted. This wrapper starts the server, then
+  # holds the foreground and exits non-zero once the real process disappears,
+  # which is what makes the runtime's restart actually mean something.
+  home.file.".local/bin/hermes-serve-fg" = {
+    executable = true;
+    text = ''
+      #!${pkgs.bash}/bin/bash
+      set -euo pipefail
+
+      port=''${HERMES_PORT:-9119}
+      hermes_bin=$HOME/.nix-profile/bin/hermes
+
+      "$hermes_bin" serve --host localhost --port "$port" --skip-build
+
+      # Poll the wrapped interpreter, not the launcher: the launcher has
+      # already exited by the time we get here.
+      while ${pkgs.procps}/bin/pgrep -f 'hermes-wrapped serve' >/dev/null 2>&1; do
+        sleep 15
+      done
+
+      echo "hermes serve is no longer running" >&2
+      exit 1
+    '';
+  };
 
   programs.delta = {
     enable = true;

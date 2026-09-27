@@ -117,3 +117,165 @@ export HOME_MANAGER_BACKUP_OVERWRITE=1
 "$activation/activate"
 
 log "activated — 'sprite console' will now land in the managed shell"
+
+# ----------------------------------------------------------------------------
+# Long-running services
+#
+# RAM does not survive hibernation and there is no systemd, so anything that
+# must outlive a wake belongs to the Sprite runtime via `sprite-env services`.
+# Verified guest facts that shape the definitions below:
+#
+#   * Services run as uid 1001 (sprite) with HOME=/home/sprite and a minimal
+#     PATH, so every --cmd must be an absolute path.
+#   * tailscaled needs root; the image grants `sprite` NOPASSWD: ALL, so it is
+#     started through /usr/bin/sudo rather than directly.
+#   * `sprite-env services get|delete` exit 22 when the service is unknown.
+# ----------------------------------------------------------------------------
+NIX_BIN=$HOME/.nix-profile/bin
+SPRITE_ENV=${SPRITE_ENV:-/.sprite/bin/sprite-env}
+TS_SOCKET=/var/run/tailscale/tailscaled.sock
+TS_STATE=/var/lib/tailscale/tailscaled.state
+HERMES_PORT=${HERMES_PORT:-9119}
+
+# Re-applying the flake should converge the service definition too, so replace
+# rather than skip: a definition created by an older revision would otherwise
+# keep running with stale arguments. Deleting tailscaled is safe — the node
+# identity lives in $TS_STATE on the persistent filesystem, not in the process.
+svc_apply() {
+  svc_name=$1
+  shift
+  if "$SPRITE_ENV" services get "$svc_name" >/dev/null 2>&1; then
+    "$SPRITE_ENV" services delete "$svc_name" >/dev/null
+  fi
+  "$SPRITE_ENV" services create "$svc_name" "$@" --no-stream >/dev/null
+}
+
+if [ ! -x "$SPRITE_ENV" ]; then
+  log "no $SPRITE_ENV in this guest, skipping service setup"
+elif [ "${ENABLE_SERVICES:-1}" != 1 ]; then
+  log "ENABLE_SERVICES=0, skipping service setup"
+else
+  if [ "${ENABLE_TAILSCALE:-1}" = 1 ]; then
+    [ -x "$NIX_BIN/tailscaled" ] || die "tailscaled missing from $NIX_BIN"
+    [ -c /dev/net/tun ] || die "/dev/net/tun is absent; this guest cannot run tailscaled in kernel mode"
+
+    log "defining the tailscaled service"
+    sudo -n mkdir -p /var/lib/tailscale /var/run/tailscale
+    svc_apply tailscaled \
+      --cmd /usr/bin/sudo \
+      --args "-n,$NIX_BIN/tailscaled,--state=$TS_STATE,--socket=$TS_SOCKET,--port=41641,--tun=tailscale0"
+
+    waited=0
+    while [ ! -S "$TS_SOCKET" ] && [ "$waited" -lt 30 ]; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    [ -S "$TS_SOCKET" ] ||
+      die "tailscaled did not create $TS_SOCKET within ${waited}s (sprite-env services get tailscaled)"
+
+    ts() { sudo -n "$NIX_BIN/tailscale" --socket="$TS_SOCKET" "$@"; }
+
+    # An auth key is single-use: once `up` succeeds the node identity is in
+    # $TS_STATE and survives every later wake, so a re-provision must not
+    # demand a key it does not need.
+    ts_state=$(ts status --json 2>/dev/null | "$NIX_BIN/jq" -r '.BackendState // empty' 2>/dev/null || true)
+    if [ "$ts_state" = "Running" ]; then
+      log "tailscale already authenticated (BackendState=Running), leaving it alone"
+    else
+      authkey=""
+      if [ -n "${TS_AUTHKEY_FILE:-}" ] && [ -f "$TS_AUTHKEY_FILE" ]; then
+        authkey=$(tr -d '\r\n' <"$TS_AUTHKEY_FILE")
+        # The key is worth nothing after `up`, and nothing that reaches a
+        # checkpoint should hold a credential.
+        rm -f "$TS_AUTHKEY_FILE"
+      fi
+
+      if [ -n "$authkey" ]; then
+        log "authenticating to the tailnet"
+        up_args=(
+          "--authkey=$authkey"
+          "--hostname=${TS_HOSTNAME:-$(hostname)}"
+          # The Sprite runtime owns /etc/resolv.conf; letting Tailscale rewrite
+          # it risks breaking guest DNS on a wake for no gain here.
+          --accept-dns=false
+        )
+        # Written as if-blocks, not `[ … ] && up_args+=(…)`: under `set -e` a
+        # trailing test that evaluates false makes the whole command return 1
+        # and aborts the script, which is exactly what happens on the default
+        # empty TS_TAGS.
+        if [ "${TS_SSH:-1}" = 1 ]; then
+          up_args+=(--ssh)
+        fi
+        if [ -n "${TS_TAGS:-}" ]; then
+          # provision.sh sends tags ';'-separated because a comma is the
+          # `sprite exec --env` list separator; Tailscale wants commas.
+          up_args+=("--advertise-tags=$(printf '%s' "$TS_TAGS" | tr ';' ',')")
+        fi
+        ts up "${up_args[@]}" || die "tailscale up failed"
+        unset authkey up_args
+      else
+        log "WARNING: tailscale is running but NOT authenticated, and no auth key was supplied"
+        log "         authenticate later with: sudo tailscale --socket=$TS_SOCKET up --ssh"
+      fi
+    fi
+
+    ts_ip=$(ts ip -4 2>/dev/null | head -n 1 || true)
+    if [ -n "$ts_ip" ]; then
+      log "tailnet address: $ts_ip"
+    fi
+  fi
+
+  if [ "${ENABLE_HERMES:-1}" = 1 ]; then
+    [ -x "$NIX_BIN/hermes" ] || die "hermes missing from $NIX_BIN"
+
+    log "defining the hermes service on localhost:$HERMES_PORT"
+    # Loopback bind, deliberately. `hermes serve` treats a loopback peer as
+    # trusted and skips authentication, so the port must never be reachable
+    # from off-box: no --http-port here either, or the Sprite's HTTPS URL would
+    # proxy the internet into an unauthenticated backend. Reach it over the
+    # tailnet with an SSH forward instead.
+    #
+    # The command is the foreground wrapper from home/sprite.nix, not `hermes`
+    # itself: `hermes serve` daemonizes, which would leave the runtime tracking
+    # a pid that exits immediately.
+    [ -x "$HOME/.local/bin/hermes-serve-fg" ] ||
+      die "hermes-serve-fg missing — home-manager activation did not install it"
+    svc_apply hermes \
+      --cmd "$HOME/.local/bin/hermes-serve-fg" \
+      --env "HOME=$HOME,PATH=$NIX_BIN:/usr/bin:/bin,HERMES_PORT=$HERMES_PORT"
+
+    waited=0
+    code=""
+    while [ "$waited" -lt 60 ]; do
+      # Any HTTP status means it is listening; -f would turn the expected 401
+      # from the auth gate into a failure.
+      #
+      # Do NOT write this as `$(curl ... || echo 000)`: on a refused connection
+      # curl prints 000 via -w *and* exits non-zero, so the fallback appends a
+      # second 000 and the result ("000000") tests as "not 000" — reporting a
+      # dead service as ready.
+      code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$HERMES_PORT/" 2>/dev/null) || code=""
+      case "$code" in
+        "" | 000)
+          sleep 2
+          waited=$((waited + 2))
+          ;;
+        *)
+          break
+          ;;
+      esac
+    done
+    case "$code" in
+      "" | 000)
+        log "WARNING: nothing answered on localhost:$HERMES_PORT after ${waited}s"
+        log "         check: sprite-env services get hermes"
+        ;;
+      *)
+        log "hermes serve answering on localhost:$HERMES_PORT (HTTP $code)"
+        ;;
+    esac
+  fi
+
+  log "services:"
+  "$SPRITE_ENV" services list >&2 || true
+fi

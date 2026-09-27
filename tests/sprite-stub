@@ -1,0 +1,73 @@
+#!/bin/bash
+# Stub `sprite` CLI for dry-running scripts/provision.sh without touching Fly.
+# Logs argv, answers the probes, and executes remote snippets locally against
+# $REMOTE_ROOT so the shipped tree can be asserted on.
+set -u
+
+log_file=${STUB_LOG:?STUB_LOG unset}
+remote_root=${REMOTE_ROOT:?REMOTE_ROOT unset}
+
+printf '%s\n' "$*" >>"$log_file"
+
+# Strip global flags so the subcommand is $1.
+args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -s | --sprite | -o | --org | --env)
+      shift 2
+      ;;
+    -p)
+      shift
+      ;;
+    *)
+      args[${#args[@]}]="$1"
+      shift
+      ;;
+  esac
+done
+set -- "${args[@]}"
+
+cmd=${1:-}
+shift || true
+
+case "$cmd" in
+  exec)
+    # Everything after `--` is the remote command.
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done
+    [ "${1:-}" = "--" ] && shift
+    case "${1:-}" in
+      true) exit 0 ;;
+      uname) echo x86_64 ;;
+      chmod) exit 0 ;;
+      sh)
+        # sh -c '<snippet>' — run it locally, remapping guest absolute paths
+        # into $REMOTE_ROOT (provision.sh expands them host-side, so HOME
+        # redirection alone is not enough).
+        shift
+        [ "${1:-}" = "-c" ] && shift
+        snippet=$(printf '%s' "${1:-true}" |
+          sed -e "s#/home/sprite#$remote_root#g" -e "s#/tmp/sprites-provision#$remote_root/tmp/sprites-provision#g")
+        HOME="$remote_root" sh -c "$snippet"
+        ;;
+      bash | fish)
+        # Verification shells: pretend everything resolved.
+        echo "  (stubbed verification shell)"
+        ;;
+      */bootstrap-guest.sh)
+        echo "  (stubbed bootstrap: $1)"
+        ;;
+      *) exit 0 ;;
+    esac
+    ;;
+  file)
+    # file push <local> <remote>
+    shift # push
+    local_path=$1
+    remote_path=$2
+    dest="$remote_root/${remote_path#/home/sprite/}"
+    mkdir -p "$(dirname "$dest")"
+    cp "$local_path" "$dest"
+    ;;
+  create) echo "created" ;;
+  *) exit 0 ;;
+esac
