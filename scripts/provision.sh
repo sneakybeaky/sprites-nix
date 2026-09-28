@@ -336,7 +336,20 @@ if [ "$enable_tailscale" = 1 ] && [ "$ts_backend" = "Running" ]; then
   cat >&2 <<EOF
 
   over the tailnet:
-    ssh sprite@$ts_dnsname                      # Tailscale SSH, no sshd needed
+    ssh -l sprite $ts_dnsname                   # Tailscale SSH, no sshd needed
+
+  NOTE: a Sprite suspends whenever it is idle, and tailnet traffic neither
+  wakes it nor keeps it awake (measured: ping answers once immediately after a
+  wake, then times out again seconds later). So before using any of the
+  commands below, wake it with
+
+    sprite exec -s $sprite_name -- true
+
+  and expect the connection to drop when it suspends again. \`sprite console\`
+  and \`sprite exec\` are the reliable paths, because those count as activity;
+  the tailnet is only dependable while something else is keeping the guest
+  busy. Default tailnet ACLs also apply \`action: check\` to your own devices,
+  so the first SSH per ~12h prints a login.tailscale.com URL to visit.
 EOF
   if [ "$enable_hermes" = 1 ]; then
     cat >&2 <<EOF
