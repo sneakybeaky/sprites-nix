@@ -32,11 +32,15 @@ Usage: provision.sh [-o ORG] [options] <sprite-name>
 Environment:
   TS_AUTHKEY        Tailscale auth key. Preferred over a flag so the key never
                     lands in your shell history or in `ps` output, e.g.
-                      TS_AUTHKEY=$(security find-generic-password -w -s ts-authkey) \
+                      TS_AUTHKEY=$(security find-generic-password -w -s tailscale-authkey) \
                         ./scripts/provision.sh mysprite
-                    Use an ephemeral, pre-approved, reusable-disabled key: it
-                    is needed exactly once. After `tailscale up` the node
-                    identity lives in /var/lib/tailscale on the guest's
+                    Use a pre-approved, reusable-disabled, NON-ephemeral key.
+                    Not ephemeral: a Sprite suspends whenever it is idle, and
+                    ephemeral nodes are removed from the tailnet once they go
+                    offline, which invalidates the stored node key and forces a
+                    fresh auth key on every wake.
+                    The key is needed exactly once. After `tailscale up` the
+                    node identity lives in /var/lib/tailscale on the guest's
                     persistent disk, so re-provisioning needs no key at all.
   SPRITE_FLAKE_DIR  Directory holding flake.nix (default: repo root, else $PWD)
   REMOTE_DIR        Where to place the flake in the guest
