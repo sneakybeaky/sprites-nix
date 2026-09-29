@@ -9,3 +9,7 @@ result-*
 .env.*
 *.pem
 *.key
+
+# Agent scratch: plans and session artefacts. Deployment-specific plans belong
+# in the private deployment repo, not in this public tool.
+.hermes/
